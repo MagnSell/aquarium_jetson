@@ -15,23 +15,7 @@ def initialize_communication():
     # Open the serial connection
     ser.open()
 
-    # Check if the serial connection is open
-    if ser.is_open:
-        print("Serial connection established.")
-    else:
-        print("Failed to establish serial connection.")
-        exit()
-
-
-    # Make sure Arduino Communication is stable
-    for i in range(3):
-        receive_arduino_communication(ser)
-
-    if receive_arduino_communication(ser) == {}:
-        print("Failed to receive data from the Arduino.")
-        print("Restart the program")
-        close_communication(ser)
-        exit()
+    
     
     return ser
 
