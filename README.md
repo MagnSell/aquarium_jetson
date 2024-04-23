@@ -1,5 +1,22 @@
 # Digital twin of an aquarium
 This repository contains all the code necessary to create a digital twin of an aquarium on a Jetson Orin Nano developer kit.
+### Physical Set up
+#### Jetson
+Initial setup requires installation of Nvidia Jetson Orin Nano developer kit. This is done by following these steps:
+https://developer.nvidia.com/embedded/learn/get-started-jetson-orin-nano-devkit . Which contains the following.
+- Jetpack 5.1.2
+- L4T 35.4.1
+- Python 3.8.10
+#### IDE
+- Installed VSCODE: https://www.youtube.com/watch?v=IbRmYCpF_ws
+- Installed Arduino IDE https://jetsonhacks.com/2019/10/04/install-arduino-ide-on-jetson-dev-kit/
+
+#### Zed 2i
+##### Setup
+- Dowload ZED SDK 4.0 https://www.stereolabs.com/developers/release#downloads
+- Installed using https://www.stereolabs.com/docs/installation/linux
+- Activate python in /usr/local/zed and run get_python_api.py
+- In future venv use: python -m pip install --ignore-installed /usr/local/zed/pyzed-4.0-cp38-cp38-linux_aarch64.whl
 
 ### Installation
 - Download pytorch and torchvision following this guide: https://forums.developer.nvidia.com/t/pytorch-for-jetson/72048.
