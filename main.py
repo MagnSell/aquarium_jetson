@@ -20,6 +20,7 @@ from utils.augmentations import letterbox
 
 from threading import Lock, Thread
 from time import sleep
+import keyboard
 
 import cv_viewer.tracking_viewer as cv_viewer
 
@@ -30,6 +31,7 @@ import pandas as pd
 from utility import convert_sensor_data_to_dataframe
 from datetime import datetime
 
+# For boolean flags, writing to a boolean variable is an atomic operation, which means it cannot be interrupted by a context switch to another thread.
 lock = Lock()
 run_signal = False
 exit_signal = False
@@ -116,7 +118,7 @@ def torch_thread(weights, img_size, conf_thres=0.2, iou_thres=0.45):
     # Run inference
     if device.type != 'cpu':
         model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
-
+    print("Network Initialized. Running Torch Thread")
     while not exit_signal:
         if run_signal:
             lock.acquire()
@@ -131,13 +133,10 @@ def torch_thread(weights, img_size, conf_thres=0.2, iou_thres=0.45):
             run_signal = False
         sleep(0.01)
     run_signal = False
-
-    lock.acquire()
     exit_signal = True
-    lock.release()
     print("Exiting Torch Thread")
 
-def sensor_measurements_thread():
+def sensor_measurements_thread(logging):
     global conn,exit_signal
     REFRESH_RATE = 5
     NUM_NODES = 2
@@ -148,28 +147,20 @@ def sensor_measurements_thread():
         print("Serial connection established.")
     else:
         print("Failed to establish serial connection.")
-        lock.acquire()
         exit_signal = True
-        lock.release()
-        exit()
 
 
     # Make sure Arduino Communication is stable
-    for i in range(3):
-        ac.receive_arduino_communication(ser)
+    if not exit_signal:
+        for i in range(3):
+            ac.receive_arduino_communication(ser)
 
-    if ac.receive_arduino_communication(ser) == {}:
-        print("Failed to receive data from the Arduino.")
-        print("Restart the program")
-        ac.close_communication(ser)
-
-        lock.acquire()
-        exit_signal = True
-        lock.release()
-
-        exit()
-    #Log
-    logging = False
+        if ac.receive_arduino_communication(ser) == {}:
+            print("Failed to receive data from the Arduino.")
+            print("Restart the program")
+            ac.close_communication(ser)
+            exit_signal = True
+    #Logging
     log_df = pd.DataFrame()
     
     # Main Loop
@@ -194,14 +185,20 @@ def sensor_measurements_thread():
         log_df.to_csv(log_name, index=False)
 
     # Close all communications
-    ac.close_communication(ser)
-    dc.close_conn(conn)
-    lock.acquire()
+    if ser.is_open:
+        ac.close_communication(ser)
+    if conn:
+        dc.close_conn(conn)
     exit_signal = True
-    lock.release()
     print("Exiting Sensor Thread")
     
-
+def check_for_exit():
+    global exit_signal
+    while True:
+        if keyboard.is_pressed('esc'):
+            exit_signal = True
+            break
+        sleep(0.1)  # To prevent CPU overuse
 
 def main():
     global image_net, exit_signal, run_signal, detections, conn
@@ -212,8 +209,10 @@ def main():
     capture_thread = Thread(target=torch_thread, kwargs={'weights': opt.weights, 'img_size': opt.img_size, "conf_thres": opt.conf_thres})
     capture_thread.start()
 
-    sensors_thread = Thread(target=sensor_measurements_thread)
+    sensors_thread = Thread(target=sensor_measurements_thread,kwargs={'logging':opt.log})
     sensors_thread.start()
+
+    Thread(target=check_for_exit).start()
 
     print("Initializing Camera...")
 
@@ -282,9 +281,12 @@ def main():
             run_signal = True
 
             # -- Detection running on the other thread
-            while run_signal:
+            while run_signal and not exit_signal:
                 sleep(0.001)
 
+            # -- In case another thread finishes
+            if exit_signal:
+                break
             # Wait for detections
             lock.acquire()
             # -- Ingest detections
@@ -310,19 +312,13 @@ def main():
                 # To exit press 'esc'
                 key = cv2.waitKey(10)
                 if key == 27:
-                    lock.acquire()
                     exit_signal = True
-                    lock.release()
                 
-            for object in objects.object_list:
-                print("ID: {}, Pos: {}, Vel: {}".format(object.id, object.position,object.velocity))
+            # for object in objects.object_list:
+            #     print("ID: {}, Pos: {}, Vel: {}".format(object.id, object.position,object.velocity))
         else:
-            lock.acquire()
             exit_signal = True
-            lock.release()
-    lock.acquire()
     exit_signal = True
-    lock.release()
     zed.close()
     print("Camera closed.")
     print("Exiting Main Thread")
@@ -334,6 +330,7 @@ if __name__ == '__main__':
     parser.add_argument('--img_size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf_thres', type=float, default=0.4, help='object confidence threshold')
     parser.add_argument('--viewer', action='store_true', help='Display viewer for debugging purposes')
+    parser.add_argument('--log', action='store_true', help='Log the sensor measurements')
     opt = parser.parse_args()
 
     with torch.no_grad():
