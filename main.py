@@ -28,7 +28,7 @@ import arduino_communication as ac
 import database_communication as dc
 import time
 import pandas as pd
-from utility import convert_sensor_data_to_dataframe
+from utility import convert_sensor_data_to_dataframe, create_fish_object
 from datetime import datetime
 
 # For boolean flags, writing to a boolean variable is an atomic operation, which means it cannot be interrupted by a context switch to another thread.
@@ -134,6 +134,7 @@ def torch_thread(weights, img_size, conf_thres=0.2, iou_thres=0.45):
         sleep(0.01)
     run_signal = False
     exit_signal = True
+    print(lock.locked())
     print("Exiting Torch Thread")
 
 def sensor_measurements_thread(logging):
@@ -190,6 +191,7 @@ def sensor_measurements_thread(logging):
     if conn:
         dc.close_conn(conn)
     exit_signal = True
+    print(lock.locked())
     print("Exiting Sensor Thread")
     
 def check_for_exit():
@@ -314,13 +316,19 @@ def main():
                 if key == 27:
                     exit_signal = True
                 
-            # for object in objects.object_list:
-            #     print("ID: {}, Pos: {}, Vel: {}".format(object.id, object.position,object.velocity))
+            for object in objects.object_list:
+                #print("ID: {}, Pos: {}, Vel: {}".format(object.id, object.position,object.velocity))
+                #print("ID: {}, Confidence: {}".format(object.id, object.confidence))
+                fish = create_fish_object(object)
+                lock.acquire()
+                dc.upsert_fish(conn,fish)
+                lock.release()
         else:
             exit_signal = True
     exit_signal = True
     zed.close()
     print("Camera closed.")
+    print(lock.locked())
     print("Exiting Main Thread")
 
 
@@ -328,7 +336,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='best_weights.pt', help='model.pt path(s)')
     parser.add_argument('--img_size', type=int, default=640, help='inference size (pixels)')
-    parser.add_argument('--conf_thres', type=float, default=0.4, help='object confidence threshold')
+    parser.add_argument('--conf_thres', type=float, default=0.8, help='object confidence threshold')
     parser.add_argument('--viewer', action='store_true', help='Display viewer for debugging purposes')
     parser.add_argument('--log', action='store_true', help='Log the sensor measurements')
     opt = parser.parse_args()

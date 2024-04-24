@@ -61,3 +61,18 @@ def delete_all_node_measurements(conn):
     # Commit the changes to the database
     conn.commit()
     print("Deleted all node measurements")
+
+
+def upsert_fish(conn, fish):
+    # Create a cursor object to execute SQL queries
+    cursor = conn.cursor()
+
+    # Upsert the Fish row
+    cursor.execute("""
+        UPSERT INTO Fish (uuid, fish_id, timestamp, x_position, y_position, z_position, x_velocity, y_velocity, z_velocity)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """, (fish.uuid, fish.fish_id, fish.timestamp, fish.x_position, fish.y_position,
+          fish.z_position, fish.x_velocity, fish.y_velocity, fish.z_velocity))
+
+    # Commit the changes to the database
+    conn.commit()

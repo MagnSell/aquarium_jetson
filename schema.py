@@ -9,3 +9,14 @@ class Node_Measurement(BaseModel):
     temperature: float
     pH : float
     dissolved_oxygen: float
+
+class Fish(BaseModel):
+    uuid: uuid.UUID
+    timestamp: datetime
+    fish_id: int
+    x_position: float
+    y_position: float
+    z_position: float
+    x_velocity: float
+    y_velocity: float
+    z_velocity: float
