@@ -31,6 +31,8 @@ import pandas as pd
 from utility import convert_sensor_data_to_dataframe, create_fish_object
 from datetime import datetime
 
+from flask import Flask, Response
+
 # For boolean flags, writing to a boolean variable is an atomic operation, which means it cannot be interrupted by a context switch to another thread.
 lock = Lock()
 run_signal = False
@@ -134,7 +136,6 @@ def torch_thread(weights, img_size, conf_thres=0.2, iou_thres=0.45):
         sleep(0.01)
     run_signal = False
     exit_signal = True
-    print(lock.locked())
     print("Exiting Torch Thread")
 
 def sensor_measurements_thread(logging):
@@ -191,7 +192,6 @@ def sensor_measurements_thread(logging):
     if conn:
         dc.close_conn(conn)
     exit_signal = True
-    print(lock.locked())
     print("Exiting Sensor Thread")
     
 def check_for_exit():
@@ -202,9 +202,34 @@ def check_for_exit():
             break
         sleep(0.1)  # To prevent CPU overuse
 
-def main():
-    global image_net, exit_signal, run_signal, detections, conn
+def generate_frame():
+    global global_image
 
+    while True:
+        if global_image is not None:
+            # Encode the frame as JPEG
+            ret, jpeg = cv2.imencode('.jpg', global_image)
+            frame = jpeg.tobytes()
+
+            # Yield the frame in the streaming format
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n\r\n')
+
+
+app = Flask(__name__)
+
+@app.route('/video_stream')
+def video_stream():
+    return Response(generate_frame(),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
+
+def run_flask_app():
+    app.run(host='0.0.0.0', port=5000)
+
+
+def main():
+    global image_net, exit_signal, run_signal, detections, conn, global_image
+    global_image = None
     conn = dc.initialize_conn()
 
     """ Start Threads"""
@@ -215,6 +240,8 @@ def main():
     sensors_thread.start()
 
     Thread(target=check_for_exit).start()
+
+    Thread(target=run_flask_app).start()
 
     print("Initializing Camera...")
 
@@ -304,7 +331,10 @@ def main():
             # 2D rendering
             np.copyto(image_left_ocv, image_left.get_data())
             cv_viewer.render_2D(image_left_ocv, image_scale, objects, obj_param.enable_tracking)
-            global_image = cv2.hconcat([image_left_ocv, image_track_ocv])
+            lock.acquire()
+            #global_image = cv2.hconcat([image_left_ocv, image_track_ocv])
+            global_image = image_left_ocv
+            lock.release()
             # Tracking view
             track_view_generator.generate_view(objects, cam_w_pose, image_track_ocv, objects.is_tracked)
 
@@ -315,11 +345,11 @@ def main():
                 key = cv2.waitKey(10)
                 if key == 27:
                     exit_signal = True
-                
+            timestamp = datetime.now()
             for object in objects.object_list:
                 #print("ID: {}, Pos: {}, Vel: {}".format(object.id, object.position,object.velocity))
                 #print("ID: {}, Confidence: {}".format(object.id, object.confidence))
-                fish = create_fish_object(object)
+                fish = create_fish_object(object,timestamp)
                 lock.acquire()
                 dc.upsert_fish(conn,fish)
                 lock.release()
@@ -328,7 +358,6 @@ def main():
     exit_signal = True
     zed.close()
     print("Camera closed.")
-    print(lock.locked())
     print("Exiting Main Thread")
 
 
@@ -339,6 +368,7 @@ if __name__ == '__main__':
     parser.add_argument('--conf_thres', type=float, default=0.8, help='object confidence threshold')
     parser.add_argument('--viewer', action='store_true', help='Display viewer for debugging purposes')
     parser.add_argument('--log', action='store_true', help='Log the sensor measurements')
+    parser.add_argument('--stream', action='store_true', help='Stream viewer on local network')
     opt = parser.parse_args()
 
     with torch.no_grad():

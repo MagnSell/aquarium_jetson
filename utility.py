@@ -21,14 +21,14 @@ def convert_sensor_data_to_dataframe(data, num_nodes):
     df = pd.DataFrame([nm.__dict__ for nm in node_measurements])
     return df
 
-def create_fish_object(object):
+def create_fish_object(object,timestamp):
     # Create a Fish object
     fish = None
     try:
         fish = Fish(
             uuid=uuid.uuid4(),
             fish_id=object.id,
-            timestamp=datetime.now(),
+            timestamp=timestamp,
             x_position=object.position[0],
             y_position=object.position[1],
             z_position=object.position[2],
